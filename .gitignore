@@ -17,6 +17,4 @@ Thumbs.db
 .vscode/
 .idea/
 
-#start, stop bot locally
-start-session.ps1
-end-session.ps1
+db/
