@@ -16,5 +16,6 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+recover.js
 
 db/
