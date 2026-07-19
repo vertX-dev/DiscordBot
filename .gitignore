@@ -4,9 +4,6 @@
 # Dependencies
 node_modules/
 
-# Local data (warnings, polls)
-data/
-
 # Logs
 npm-debug.log*
 *.log
@@ -17,5 +14,7 @@ Thumbs.db
 .vscode/
 .idea/
 recover.js
+docs/
 
 db/
+config/server-template.js

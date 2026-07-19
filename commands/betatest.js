@@ -1,11 +1,13 @@
 import {
   SlashCommandBuilder, PermissionFlagsBits, ChannelType,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
 } from 'discord.js';
 import {
-  saveBetatest, getBetatest, updateBetatest, listBetatests, nextBetatestId,
-} from '../lib/store.js';
+  insertBetatest, attachBetatestDiscord, getBetatest, endBetatest,
+  listOpenBetatests, getOpenBetatestByChannel, isTester, insertFeedback, feedbackStats,
+} from '../lib/db.js';
 import { buildBetaEmbed, betaRoleName, betaChannelName, BETA_CATEGORY } from '../lib/betatest.js';
+import { awardXp, ensureRegistered, FEEDBACK_XP } from '../lib/levels.js';
 
 const P = PermissionFlagsBits;
 
@@ -18,15 +20,17 @@ export const data = new SlashCommandBuilder()
     .addRoleOption((o) => o.setName('project').setDescription('Project role — also the role required to apply').setRequired(true))
     .addIntegerOption((o) => o.setName('limit').setDescription('Max testers (default: no limit)').setRequired(false).setMinValue(1)))
   .addSubcommand((sc) => sc.setName('end').setDescription('End a beta test: delete its role + channel, close applications.')
-    .addStringOption((o) => o.setName('id').setDescription('Beta test id').setRequired(true).setAutocomplete(true)));
+    .addStringOption((o) => o.setName('id').setDescription('Beta test id').setRequired(true).setAutocomplete(true)))
+  .addSubcommand((sc) => sc.setName('feedback').setDescription('Submit feedback — run inside your beta test channel.')
+    .addStringOption((o) => o.setName('text').setDescription('Your feedback').setRequired(true)));
 
 export async function autocomplete(interaction) {
   const focused = interaction.options.getFocused().toLowerCase();
-  const choices = listBetatests(interaction.guild.id)
-    .filter((b) => b.open)
+  const rows = await listOpenBetatests(interaction.guild.id).catch(() => []);
+  const choices = rows
     .filter((b) => String(b.id).includes(focused) || b.project.toLowerCase().includes(focused))
     .slice(0, 25)
-    .map((b) => ({ name: `#${b.id} — ${b.project} (${b.testers.length}${b.limit ? `/${b.limit}` : ''})`, value: String(b.id) }));
+    .map((b) => ({ name: `#${b.id} — ${b.project}`, value: String(b.id) }));
   await interaction.respond(choices);
 }
 
@@ -34,6 +38,7 @@ export async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
   if (sub === 'start') return start(interaction);
   if (sub === 'end') return end(interaction);
+  if (sub === 'feedback') return feedback(interaction);
 }
 
 async function ensureBetaCategory(guild, botId) {
@@ -60,15 +65,16 @@ async function start(interaction) {
 
   const projectRole = interaction.options.getRole('project');
   const limit = interaction.options.getInteger('limit') ?? null;
-  const id = String(nextBetatestId(guild.id));
   const project = projectRole.name;
 
-  // 1) Tester role (fresh, lands below the bot so it can be assigned).
+  // Insert first to get the id (the embed shows it); fill in Discord ids after.
+  const bt = await insertBetatest({ guildId: guild.id, project, projectRoleId: projectRole.id, limit, createdBy: interaction.user.id });
+  const id = String(bt.id);
+
   const betaRole = await guild.roles.create({
     name: betaRoleName(project, id), mentionable: true, reason: `Beta test #${id} (${project})`,
   });
 
-  // 2) Private channel under the Beta Tests category: beta role + Admin + bot.
   const category = await ensureBetaCategory(guild, me.id);
   const everyone = guild.roles.everyone.id;
   const adminRole = guild.roles.cache.find((r) => r.name === 'Admin');
@@ -81,26 +87,21 @@ async function start(interaction) {
   const channel = await guild.channels.create({
     name: betaChannelName(project, id), type: ChannelType.GuildText,
     parent: category?.id, permissionOverwrites: overwrites,
-    topic: `Private beta test for ${project} (#${id}).`, reason: `Beta test #${id}`,
+    topic: `Private beta test for ${project} (#${id}). Use /betatest feedback here.`, reason: `Beta test #${id}`,
   });
 
-  // 3) Announcement with the Apply button, pinging the project role.
   const announceChannel = guild.channels.cache.find((c) => c.name === 'announcements' && c.isTextBased?.()) ?? interaction.channel;
-  const bt = {
-    id, project, projectRoleId: projectRole.id, roleId: betaRole.id, channelId: channel.id,
-    announceChannelId: announceChannel.id, limit, testers: [], open: true, createdBy: interaction.user.id,
-  };
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`betatest:apply:${id}`).setLabel('Apply to test').setEmoji('🧪').setStyle(ButtonStyle.Success),
   );
   const msg = await announceChannel.send({
     content: `<@&${projectRole.id}>`,
-    embeds: [buildBetaEmbed(bt)],
+    embeds: [buildBetaEmbed(bt, 0)],
     components: [row],
     allowedMentions: { roles: [projectRole.id] },
   });
-  bt.messageId = msg.id;
-  saveBetatest(guild.id, bt);
+
+  await attachBetatestDiscord(id, { roleId: betaRole.id, channelId: channel.id, announceChannelId: announceChannel.id, messageId: msg.id });
 
   return interaction.editReply(
     `Started beta test **#${id}** for **${project}**.\n`
@@ -116,28 +117,61 @@ async function end(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   const id = interaction.options.getString('id');
-  const bt = getBetatest(guild.id, id);
-  if (!bt) return interaction.editReply(`No beta test **#${id}** found.`);
+  const bt = await getBetatest(id);
+  if (!bt || bt.guild_id !== guild.id) return interaction.editReply(`No beta test **#${id}** found.`);
 
   const notes = [];
-
-  const role = guild.roles.cache.get(bt.roleId) ?? await guild.roles.fetch(bt.roleId).catch(() => null);
-  if (role) await role.delete(`Beta test #${id} ended`).catch((e) => notes.push(`role: ${e.message}`));
-
-  const channel = guild.channels.cache.get(bt.channelId) ?? await guild.channels.fetch(bt.channelId).catch(() => null);
-  if (channel) await channel.delete(`Beta test #${id} ended`).catch((e) => notes.push(`channel: ${e.message}`));
-
-  // Close the announcement (drop the Apply button, mark ended).
-  const ann = await guild.channels.fetch(bt.announceChannelId).catch(() => null);
-  if (ann && bt.messageId) {
-    const msg = await ann.messages.fetch(bt.messageId).catch(() => null);
-    if (msg) await msg.edit({ embeds: [buildBetaEmbed({ ...bt, open: false })], components: [] }).catch(() => {});
+  if (bt.role_id) {
+    const role = guild.roles.cache.get(bt.role_id) ?? await guild.roles.fetch(bt.role_id).catch(() => null);
+    if (role) await role.delete(`Beta test #${id} ended`).catch((e) => notes.push(`role: ${e.message}`));
+  }
+  if (bt.channel_id) {
+    const channel = guild.channels.cache.get(bt.channel_id) ?? await guild.channels.fetch(bt.channel_id).catch(() => null);
+    if (channel) await channel.delete(`Beta test #${id} ended`).catch((e) => notes.push(`channel: ${e.message}`));
+  }
+  if (bt.announce_channel_id && bt.message_id) {
+    const ann = await guild.channels.fetch(bt.announce_channel_id).catch(() => null);
+    const msg = ann ? await ann.messages.fetch(bt.message_id).catch(() => null) : null;
+    if (msg) await msg.edit({ embeds: [buildBetaEmbed({ ...bt, status: 'ended' }, 0)], components: [] }).catch(() => {});
   }
 
-  updateBetatest(guild.id, id, (b) => { b.open = false; });
+  await endBetatest(id);
+
+  // Feedback stats survive in the DB for later rewards; surface the top testers now.
+  const stats = await feedbackStats(id).catch(() => []);
+  const top = stats.slice(0, 5).map((s, i) => `${i + 1}. <@${s.userId}> — ${s.count} feedback`).join('\n');
 
   return interaction.editReply(
     `Ended beta test **#${id}** (${bt.project}) — removed the role, deleted the channel, closed applications.`
+    + (stats.length ? `\n\n**Top feedback contributors:**\n${top}` : '\n\nNo feedback was submitted.')
     + (notes.length ? `\n⚠ ${notes.join('; ')}` : ''),
   );
+}
+
+async function feedback(interaction) {
+  const bt = await getOpenBetatestByChannel(interaction.channelId);
+  if (!bt) {
+    return interaction.reply({ ephemeral: true, content: 'Run this **inside** your beta test channel (an open one).' });
+  }
+  if (!(await isTester(bt.id, interaction.user.id))) {
+    return interaction.reply({ ephemeral: true, content: 'Only enrolled testers can submit feedback for this beta.' });
+  }
+  const text = interaction.options.getString('text');
+
+  await insertFeedback(bt.id, interaction.user.id, text);
+
+  // Bonus XP for contributing (best-effort; registers the tester if needed).
+  await ensureRegistered(interaction.guild.id, interaction.user.id);
+  await awardXp(interaction.guild.id, interaction.member, FEEDBACK_XP, { channel: interaction.channel }).catch(() => {});
+
+  // Post it so devs/admins can read it, and confirm to the tester.
+  const embed = new EmbedBuilder()
+    .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() })
+    .setDescription(text)
+    .setColor(0x9b59b6)
+    .setFooter({ text: `${bt.project} beta #${bt.id} · feedback` })
+    .setTimestamp();
+  await interaction.channel.send({ embeds: [embed] }).catch(() => {});
+
+  return interaction.reply({ ephemeral: true, content: `Thanks — feedback recorded (+${FEEDBACK_XP} XP). 📝` });
 }

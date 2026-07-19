@@ -20,7 +20,7 @@ export async function execute(interaction) {
     if (err) return interaction.reply({ ephemeral: true, content: err });
   }
 
-  const count = addWarning(interaction.guild.id, user.id, {
+  const count = await addWarning(interaction.guild.id, user.id, {
     reason,
     moderator: interaction.user.tag,
     moderatorId: interaction.user.id,

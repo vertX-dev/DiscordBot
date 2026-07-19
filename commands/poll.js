@@ -37,5 +37,5 @@ export async function execute(interaction) {
   await interaction.reply({ embeds: [buildPollEmbed(poll)], components: [voteRow, endRow] });
   const message = await interaction.fetchReply();
   poll.messageId = message.id;
-  savePoll(interaction.guild.id, poll);
+  await savePoll(interaction.guild.id, poll);
 }

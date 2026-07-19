@@ -43,22 +43,22 @@ export async function execute(interaction) {
     await interaction.reply({ embeds: [buildAddonEmbed(poll)], components: [new ActionRowBuilder().addComponents(menu)] });
     const message = await interaction.fetchReply();
     poll.messageId = message.id;
-    saveAddonPoll(gid, poll);
+    await saveAddonPoll(gid, poll);
     return;
   }
 
   if (sub === 'results') {
-    const poll = latestOpenAddonPoll(gid);
+    const poll = await latestOpenAddonPoll(gid);
     if (!poll) return interaction.reply({ ephemeral: true, content: 'There is no active addon poll. Start one with `/addonpoll start`.' });
     return interaction.reply({ embeds: [buildAddonEmbed(poll)] });
   }
 
   // end
-  const poll = latestOpenAddonPoll(gid);
+  const poll = await latestOpenAddonPoll(gid);
   if (!poll) return interaction.reply({ ephemeral: true, content: 'There is no active addon poll to end.' });
 
-  updateAddonPoll(gid, poll.id, (p) => { p.open = false; });
-  const closed = getAddonPoll(gid, poll.id);
+  await updateAddonPoll(gid, poll.id, (p) => { p.open = false; });
+  const closed = await getAddonPoll(gid, poll.id);
 
   // Refresh the original poll message (disable the menu) if we can find it.
   try {

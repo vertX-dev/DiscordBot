@@ -6,13 +6,15 @@ import { Client, Collection, Events, GatewayIntentBits } from 'discord.js';
 import { handleComponent } from './lib/components.js';
 import { handleBugReportModal } from './commands/bug.js';
 import { startBugSync } from './lib/bugs.js';
+import { handleMessage, startLevels } from './lib/levels.js';
 import http from 'node:http';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Guilds intent is all that's needed for slash commands and the setup flow.
-// Add more intents here (e.g. GuildMembers) as your commands require them.
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// Guilds for slash commands; GuildMessages to award XP per message. Neither is
+// privileged (we count messages, we don't read their content), so no Developer
+// Portal toggle is needed.
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
 // --- Auto-load every command in the commands/ folder ---------------------
 client.commands = new Collection();
@@ -69,9 +71,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 });
 
+// Award XP on messages (best-effort; never let it break message flow).
+client.on(Events.MessageCreate, (message) => {
+    handleMessage(message).catch((e) => console.error('[levels] message handler:', e.message));
+});
+
 client.once(Events.ClientReady, (readyClient) => {
     console.log(`Logged in as ${readyClient.user.tag} — ready to serve ${client.commands.size} command(s).`);
     startBugSync(readyClient);
+    startLevels(readyClient);
 });
 
 client.login(process.env.DISCORD_TOKEN);

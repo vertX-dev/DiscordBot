@@ -18,11 +18,11 @@ export async function execute(interaction) {
   const user = interaction.options.getUser('user');
 
   if (sub === 'clear') {
-    const removed = clearWarnings(interaction.guild.id, user.id);
+    const removed = await clearWarnings(interaction.guild.id, user.id);
     return interaction.reply({ content: `🧹 Cleared **${removed}** warning(s) from **${user.tag}**.` });
   }
 
-  const list = getWarnings(interaction.guild.id, user.id);
+  const list = await getWarnings(interaction.guild.id, user.id);
   if (!list.length) {
     return interaction.reply({ ephemeral: true, content: `**${user.tag}** has no warnings.` });
   }
