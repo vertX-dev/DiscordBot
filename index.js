@@ -79,7 +79,7 @@ client.on(Events.MessageCreate, (message) => {
 client.once(Events.ClientReady, (readyClient) => {
     console.log(`Logged in as ${readyClient.user.tag} — ready to serve ${client.commands.size} command(s).`);
     startBugSync(readyClient);
-    startLevels(readyClient);
+    startLevels();
 });
 
 client.login(process.env.DISCORD_TOKEN);

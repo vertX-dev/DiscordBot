@@ -127,6 +127,7 @@ export const categories = [
             { name: 'off-topic', type: 'text' },
             { name: 'media', type: 'text', topic: 'Screenshots, clips, and creations.' },
             { name: 'bot-commands', type: 'text', topic: 'Use bot slash commands here.' },
+            { name: 'levels', type: 'text', topic: 'Level-up announcements. Earn XP by chatting and contributing.' },
             { name: 'pick-roles', type: 'text', topic: 'Opt into update pings for the projects you care about.', postRoleMenu: true },
         ],
     },

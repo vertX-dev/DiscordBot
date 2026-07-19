@@ -7,7 +7,7 @@ import {
   listOpenBetatests, getOpenBetatestByChannel, isTester, insertFeedback, feedbackStats,
 } from '../lib/db.js';
 import { buildBetaEmbed, betaRoleName, betaChannelName, BETA_CATEGORY } from '../lib/betatest.js';
-import { awardXp, ensureRegistered, FEEDBACK_XP } from '../lib/levels.js';
+import { awardXp } from '../lib/levels.js';
 
 const P = PermissionFlagsBits;
 
@@ -160,9 +160,8 @@ async function feedback(interaction) {
 
   await insertFeedback(bt.id, interaction.user.id, text);
 
-  // Bonus XP for contributing (best-effort; registers the tester if needed).
-  await ensureRegistered(interaction.guild.id, interaction.user.id);
-  await awardXp(interaction.guild.id, interaction.member, FEEDBACK_XP, { channel: interaction.channel }).catch(() => {});
+  // Bonus XP on the beta track for contributing (best-effort).
+  await awardXp(interaction.guild, interaction.member, 'beta').catch(() => {});
 
   // Post it so devs/admins can read it, and confirm to the tester.
   const embed = new EmbedBuilder()
@@ -173,5 +172,5 @@ async function feedback(interaction) {
     .setTimestamp();
   await interaction.channel.send({ embeds: [embed] }).catch(() => {});
 
-  return interaction.reply({ ephemeral: true, content: `Thanks — feedback recorded (+${FEEDBACK_XP} XP). 📝` });
+  return interaction.reply({ ephemeral: true, content: 'Thanks — feedback recorded, and you earned Beta Tester XP. 📝' });
 }

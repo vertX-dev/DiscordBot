@@ -14,6 +14,7 @@ const builder = new SlashCommandBuilder()
 for (let i = 3; i <= 5; i++) {
   builder.addStringOption((o) => o.setName(`option${i}`).setDescription(`Option ${i}`).setRequired(false));
 }
+builder.addBooleanOption((o) => o.setName('weighted').setDescription('Count votes by member level/activity (default: off)').setRequired(false));
 export const data = builder;
 
 export async function execute(interaction) {
@@ -24,7 +25,10 @@ export async function execute(interaction) {
     if (label) options.push({ label, votes: [] });
   }
 
-  const poll = { id: newId(), question, options, open: true, channelId: interaction.channelId };
+  const poll = {
+    id: newId(), question, options, open: true, channelId: interaction.channelId,
+    weighted: interaction.options.getBoolean('weighted') ?? false, weights: {},
+  };
 
   const voteRow = new ActionRowBuilder().addComponents(
     options.map((o, i) =>

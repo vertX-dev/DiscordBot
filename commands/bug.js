@@ -7,6 +7,7 @@ import {
   buildBugEmbed, resolveBugChannel,
 } from '../lib/bugs.js';
 import { insertBug, attachDiscordIds, updateBugStatus, listBugs, distinctProjects } from '../lib/db.js';
+import { awardXp } from '../lib/levels.js';
 
 export const data = new SlashCommandBuilder()
   .setName('bug')
@@ -105,6 +106,7 @@ export async function handleBugReportModal(interaction) {
   const starter = await thread.fetchStarterMessage();
   await attachDiscordIds(bug.id, { channelId: bugChannel.id, messageId: starter.id, threadId: thread.id });
 
+  await awardXp(interaction.guild, interaction.member, 'bug').catch(() => {});
   return interaction.editReply(`Reported bug **#${bug.id}** in ${thread}.`);
 }
 

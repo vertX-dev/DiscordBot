@@ -12,7 +12,8 @@ export const data = new SlashCommandBuilder()
   .setDMPermission(false)
   .addSubcommand((s) =>
     s.setName('start').setDescription('Start a new monthly addon-priority poll')
-      .addStringOption((o) => o.setName('month').setDescription('Label, e.g. "July 2026"').setRequired(false)))
+      .addStringOption((o) => o.setName('month').setDescription('Label, e.g. "July 2026"').setRequired(false))
+      .addBooleanOption((o) => o.setName('weighted').setDescription('Count votes by member level/activity (default: off)').setRequired(false)))
   .addSubcommand((s) => s.setName('results').setDescription('Show the current ranking'))
   .addSubcommand((s) => s.setName('end').setDescription('Close the active poll and post the final ranking'));
 
@@ -31,6 +32,8 @@ export async function execute(interaction) {
       votes: {},
       open: true,
       channelId: interaction.channelId,
+      weighted: interaction.options.getBoolean('weighted') ?? false,
+      weights: {},
     };
 
     const menu = new StringSelectMenuBuilder()
