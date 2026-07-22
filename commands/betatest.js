@@ -6,7 +6,7 @@ import {
   insertBetatest, attachBetatestDiscord, getBetatest, endBetatest,
   listOpenBetatests, getOpenBetatestByChannel, isTester, insertFeedback, feedbackStats,
 } from '../lib/db.js';
-import { buildBetaEmbed, betaRoleName, betaChannelName, BETA_CATEGORY } from '../lib/betatest.js';
+import { buildBetaEmbed, betaRoleName, betaChannelName, betaLabel, BETA_CATEGORY } from '../lib/betatest.js';
 import { awardXp } from '../lib/levels.js';
 
 const P = PermissionFlagsBits;
@@ -18,7 +18,9 @@ export const data = new SlashCommandBuilder()
   .setDMPermission(false)
   .addSubcommand((sc) => sc.setName('start').setDescription('Start a beta test for a project.')
     .addRoleOption((o) => o.setName('project').setDescription('Project role — also the role required to apply').setRequired(true))
-    .addIntegerOption((o) => o.setName('limit').setDescription('Max testers (default: no limit)').setRequired(false).setMinValue(1)))
+    .addIntegerOption((o) => o.setName('limit').setDescription('Max testers (default: no limit)').setRequired(false).setMinValue(1))
+    .addStringOption((o) => o.setName('name').setDescription('Custom name (defaults to the project role name)').setRequired(false).setMaxLength(80))
+    .addRoleOption((o) => o.setName('require_role').setDescription('Extra role members must also have to apply (e.g. Trusted)').setRequired(false)))
   .addSubcommand((sc) => sc.setName('end').setDescription('End a beta test: delete its role + channel, close applications.')
     .addStringOption((o) => o.setName('id').setDescription('Beta test id').setRequired(true).setAutocomplete(true)))
   .addSubcommand((sc) => sc.setName('feedback').setDescription('Submit feedback — run inside your beta test channel.')
@@ -66,13 +68,19 @@ async function start(interaction) {
   const projectRole = interaction.options.getRole('project');
   const limit = interaction.options.getInteger('limit') ?? null;
   const project = projectRole.name;
+  const customName = interaction.options.getString('name')?.trim() || null;
+  const extraRole = interaction.options.getRole('require_role');
 
   // Insert first to get the id (the embed shows it); fill in Discord ids after.
-  const bt = await insertBetatest({ guildId: guild.id, project, projectRoleId: projectRole.id, limit, createdBy: interaction.user.id });
+  const bt = await insertBetatest({
+    guildId: guild.id, project, name: customName, projectRoleId: projectRole.id,
+    extraRoleId: extraRole?.id ?? null, limit, createdBy: interaction.user.id,
+  });
   const id = String(bt.id);
+  const label = betaLabel(bt);
 
   const betaRole = await guild.roles.create({
-    name: betaRoleName(project, id), mentionable: true, reason: `Beta test #${id} (${project})`,
+    name: betaRoleName(label, id), mentionable: true, reason: `Beta test #${id} (${label})`,
   });
 
   const category = await ensureBetaCategory(guild, me.id);
@@ -85,9 +93,9 @@ async function start(interaction) {
   ];
   if (adminRole) overwrites.push({ id: adminRole.id, allow: [P.ViewChannel] });
   const channel = await guild.channels.create({
-    name: betaChannelName(project, id), type: ChannelType.GuildText,
+    name: betaChannelName(label, id), type: ChannelType.GuildText,
     parent: category?.id, permissionOverwrites: overwrites,
-    topic: `Private beta test for ${project} (#${id}). Use /betatest feedback here.`, reason: `Beta test #${id}`,
+    topic: `Private beta test for ${label} (#${id}). Use /betatest feedback here.`, reason: `Beta test #${id}`,
   });
 
   const announceChannel = guild.channels.cache.find((c) => c.name === 'announcements' && c.isTextBased?.()) ?? interaction.channel;
@@ -104,10 +112,11 @@ async function start(interaction) {
   await attachBetatestDiscord(id, { roleId: betaRole.id, channelId: channel.id, announceChannelId: announceChannel.id, messageId: msg.id });
 
   return interaction.editReply(
-    `Started beta test **#${id}** for **${project}**.\n`
+    `Started beta test **#${id}** — **${label}**.\n`
     + `• Role: <@&${betaRole.id}>\n`
     + `• Channel: <#${channel.id}>\n`
     + `• Announcement: ${announceChannel}\n`
+    + `• Apply requires: <@&${projectRole.id}>${extraRole ? ` + <@&${extraRole.id}>` : ''}\n`
     + `• ${limit ? `Limit: ${limit} tester(s)` : 'No tester limit'}`,
   );
 }

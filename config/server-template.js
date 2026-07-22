@@ -137,18 +137,6 @@ export const categories = [
         channels: [{ name: 'addons-general', type: 'text', topic: 'General addon chat. Add per-addon channels with /newaddon.' }],
     },
     {
-        // Hidden category — only the Developer role (and Admin) can see it.
-        name: 'Tools',
-        access: 'role:Developer',
-        channels: [
-            { name: 'addon-disguiser', type: 'text' },
-            { name: 'image-editor', type: 'text' },
-            { name: 'unified-cli', type: 'text' },
-            { name: 'vtm-vscode-extension', type: 'text' },
-            { name: 'vertion', type: 'text' },
-        ],
-    },
-    {
         // Forum channels — one post per question/bug/idea, easy to track.
         name: 'Support',
         access: 'members',
@@ -200,5 +188,5 @@ export const RULES = {
 export const WELCOME = {
     enabled: true,
     channel: 'welcome', // channel name to greet in (e.g. 'welcome' or 'general')
-    message: 'Welcome to **{server}**, {user}! 🎉 You\'re member **#{count}** — check out the channels and say hi.',
+    message: "Welcome to **{server}**, {user}! 🎉 You're member **#{count}** — check out the channels and say hi.",
 };

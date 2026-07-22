@@ -1,11 +1,11 @@
-import { SlashCommandBuilder, PermissionFlagsBits, ChannelType } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder } from 'discord.js';
 import { VERIFIED_ROLE } from '../config/server-template.js';
 
 const P = PermissionFlagsBits;
 
 export const data = new SlashCommandBuilder()
   .setName('newaddon')
-  .setDescription('Creates a channel for a new addon under the Addons category. Admin only.')
+  .setDescription('Creates a forum channel for a new addon under the Addons category. Admin only.')
   .setDefaultMemberPermissions(P.ManageChannels)
   .setDMPermission(false)
   .addStringOption((o) =>
@@ -41,10 +41,22 @@ export async function execute(interaction) {
   const existing = guild.channels.cache.find((c) => c.parentId === category.id && c.name === slug);
   if (existing) return interaction.editReply(`A channel already exists for that addon: <#${existing.id}>`);
 
-  const channel = await guild.channels.create({
-    name: slug, type: ChannelType.GuildText, parent: category.id,
-    topic: `Discussion for the ${raw} addon.`, reason: `New addon: ${raw}`,
-  });
+  // Forum channel: one pinned General Discussion post + a post per release /
+  // experimental feature / mini-addon / config. Fall back to text if the guild
+  // isn't a Community server (forums require it).
+  const base = {
+    name: slug, parent: category.id, reason: `New addon: ${raw}`,
+    topic: `${raw} — releases, experimental features, mini-addons, configs. One post per topic.`,
+  };
+  let channel;
+  let note = '';
+  try {
+    channel = await guild.channels.create({ ...base, type: ChannelType.GuildForum });
+    await pinGeneralDiscussion(channel, raw).catch(() => { note += '\n⚠ Could not create/pin the General Discussion post — add it manually.'; });
+  } catch {
+    channel = await guild.channels.create({ ...base, type: ChannelType.GuildText });
+    note += '\n⚠ Forums need a Community-enabled server — created a text channel instead.';
+  }
   await channel.lockPermissions().catch(() => {}); // sync visibility to the Addons category
 
   let extra = '';
@@ -54,5 +66,17 @@ export async function execute(interaction) {
     extra = `\nCreated role **@${role.name}** — add it to the #pick-roles menu via \`config/server-template.js\` (set \`selfAssign: true\`) and re-run \`/setup\`.`;
   }
 
-  await interaction.editReply(`Created <#${channel.id}>.${extra}`);
+  return interaction.editReply(`Created <#${channel.id}>.${extra}${note}`);
+}
+
+async function pinGeneralDiscussion(forum, addonName) {
+  const embed = new EmbedBuilder()
+    .setTitle('💬 General Discussion')
+    .setColor(0x5865f2)
+    .setDescription(
+      `Post teasers, questions, and cross-topic chat about **${addonName}** here.\n\n`
+      + 'Use separate posts for releases, experimental features, mini-addons, and configs.',
+    );
+  const thread = await forum.threads.create({ name: 'General Discussion', message: { embeds: [embed] } });
+  await thread.pin('Pinned General Discussion');
 }
