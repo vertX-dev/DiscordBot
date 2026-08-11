@@ -1,12 +1,15 @@
 import {
   SlashCommandBuilder, PermissionFlagsBits, ChannelType,
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
+  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } from 'discord.js';
 import {
   roles as roleDefs, categories as categoryDefs, RULES, IDS,
 } from '../config/server-template.js';
 import { reviewForumTags } from '../lib/reviews.js';
 import { bugForumTags, BUG_CHANNEL_NAME } from '../lib/bugs.js';
+import { addons as addonList } from '../config/addons.js';
+import { seedAddon } from '../lib/db.js';
+import { syncRoleMenu } from '../lib/rolemenu.js';
 
 const P = PermissionFlagsBits;
 
@@ -50,7 +53,7 @@ export async function execute(interaction) {
 
   // Best-effort hierarchy: staff highest, gate role lowest, all below the bot.
   try {
-    const order = ['admin', 'mod', 'maintainer', 'dev', 'supporter', 'role-unified', 'role-pvpbot', 'verified']
+    const order = ['admin', 'mod', 'maintainer', 'addon-maintainer', 'dev', 'supporter', 'role-unified', 'role-pvpbot', 'verified']
       .map((k) => roleMap[k]).filter(Boolean);
     const botTop = me.roles.highest.position;
     await guild.roles.setPositions(order.map((r, i) => ({ role: r.id, position: Math.max(1, botTop - 1 - i) })));
@@ -92,7 +95,15 @@ export async function execute(interaction) {
     }
   }
 
-  // 3) Report -------------------------------------------------------------
+  // 3) Addons + role picker ----------------------------------------------
+  // Seed built-in addons into the DB (the single source for /addonpoll and
+  // #pick-roles), then build the role menu (project roles + addon roles).
+  for (const a of addonList) {
+    await seedAddon(guild.id, a.name, a.difficulty).catch((e) => sum.warnings.push(`Seed addon ${a.name}: ${e.message}`));
+  }
+  await syncRoleMenu(guild).catch((e) => sum.warnings.push(`Role menu: ${e.message}`));
+
+  // 4) Report -------------------------------------------------------------
   const lines = [
     '**✅ Server setup complete.**',
     `Roles — ${sum.rolesNew} created, ${sum.rolesOld} already existed.`,
@@ -221,22 +232,8 @@ async function maybePost(channel, ch, roleMap, sum) {
       await channel.send({ embeds: [embed], components: [row] });
     }
 
-    if (ch.postRoleMenu && !(await hasComponent(channel, IDS.roleMenu))) {
-      const selfRoles = roleDefs.filter((d) => d.selfAssign).map((d) => roleMap[d.key]).filter(Boolean);
-      if (selfRoles.length) {
-        const menu = new StringSelectMenuBuilder()
-          .setCustomId(IDS.roleMenu)
-          .setPlaceholder('Select the projects you want update pings for')
-          .setMinValues(0)
-          .setMaxValues(selfRoles.length)
-          .addOptions(selfRoles.map((r) => ({ label: r.name, value: r.id })));
-        const embed = new EmbedBuilder()
-          .setTitle('🔔 Project Roles')
-          .setDescription('Pick the projects you want to be pinged about. Selecting again removes the role.')
-          .setColor(0x5865f2);
-        await channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
-      }
-    }
+    // The #pick-roles menu is built after the loop by syncRoleMenu (so it can
+    // include addon roles from the DB, not just template project roles).
   } catch (e) {
     sum.warnings.push(`Could not post in #${channel.name}: ${e.message}`);
   }

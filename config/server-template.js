@@ -72,6 +72,15 @@ export const roles = [
         permissions: [],
     },
     {
+        // Gates /rrs register/approve/remove/generate (config/raritystats.js).
+        key: 'addon-maintainer',
+        name: 'Addon Maintainer',
+        color: 0x16a085,
+        hoist: true,
+        mentionable: true,
+        permissions: [],
+    },
+    {
         key: 'verified',
         name: VERIFIED_ROLE,
         color: 0x95a5a6,

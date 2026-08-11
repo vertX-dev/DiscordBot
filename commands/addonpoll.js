@@ -1,9 +1,10 @@
 import {
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder,
 } from 'discord.js';
-import { addons, WEEKLY_SLOT_BUDGET, MAX_VOTES } from '../config/addons.js';
+import { addons as configAddons, WEEKLY_SLOT_BUDGET, MAX_VOTES } from '../config/addons.js';
 import { newId, buildAddonEmbed } from '../lib/polls.js';
 import { saveAddonPoll, getAddonPoll, latestOpenAddonPoll, updateAddonPoll } from '../lib/store.js';
+import { listAddons } from '../lib/db.js';
 
 export const data = new SlashCommandBuilder()
   .setName('addonpoll')
@@ -22,10 +23,16 @@ export async function execute(interaction) {
   const gid = interaction.guild.id;
 
   if (sub === 'start') {
+    // Addons come from the DB (registered via /newaddon, seeded by /setup); fall
+    // back to the config list if the DB isn't seeded yet.
+    const dbAddons = await listAddons(gid).catch(() => []);
+    const list = (dbAddons.length ? dbAddons : configAddons).map((a) => ({ name: a.name, difficulty: a.difficulty }))
+      .slice(0, 25); // select-menu cap
+
     const poll = {
       id: newId(),
-      addons: addons.map((a) => a.name),
-      difficulty: Object.fromEntries(addons.map((a) => [a.name, a.difficulty])),
+      addons: list.map((a) => a.name),
+      difficulty: Object.fromEntries(list.map((a) => [a.name, a.difficulty])),
       budget: WEEKLY_SLOT_BUDGET,
       maxVotes: MAX_VOTES,
       month: interaction.options.getString('month') ?? null,
@@ -41,7 +48,7 @@ export async function execute(interaction) {
       .setPlaceholder(`Pick up to ${MAX_VOTES} addons you want prioritized`)
       .setMinValues(1)
       .setMaxValues(Math.min(MAX_VOTES, poll.addons.length))
-      .addOptions(addons.map((a) => ({ label: a.name, description: `difficulty ${a.difficulty}`, value: a.name })));
+      .addOptions(list.map((a) => ({ label: a.name, description: `difficulty ${a.difficulty}`, value: a.name })));
 
     await interaction.reply({ embeds: [buildAddonEmbed(poll)], components: [new ActionRowBuilder().addComponents(menu)] });
     const message = await interaction.fetchReply();

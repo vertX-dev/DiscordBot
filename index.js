@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Client, Collection, Events, GatewayIntentBits } from 'discord.js';
 import { handleComponent } from './lib/components.js';
 import { handleBugReportModal } from './commands/bug.js';
+import { handleRrsModal } from './commands/rrs.js';
 import { startBugSync } from './lib/bugs.js';
 import { handleMessage, startLevels } from './lib/levels.js';
 import http from 'node:http';
@@ -51,6 +52,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith('bugreport|')) await handleBugReportModal(interaction);
+            else if (interaction.customId.startsWith('rrs|')) await handleRrsModal(interaction);
             return;
         }
 
